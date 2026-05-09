@@ -10,12 +10,13 @@ def home():
     if request.method == "POST":
         message = request.form["message"]
 
-        score, reasons = analyze_message(message)
+        score, reasons, verdict = analyze_message(message)
 
         result = {
-            "score": score,
-            "reasons": reasons
-        }
+          "score": score,
+          "reasons": reasons,
+          "verdict": verdict
+       }     
 
     return render_template("index.html", result=result)
 

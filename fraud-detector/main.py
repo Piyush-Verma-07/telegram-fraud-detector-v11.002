@@ -7,7 +7,7 @@ message = input("Paste suspicious message:\n")
 
 
 # Send the message to the detection function
-score, reasons = analyze_message(message)
+score, reasons, verdict = analyze_message(message)
 
 
 # Print the risk score

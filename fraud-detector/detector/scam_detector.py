@@ -713,6 +713,39 @@ threatfox_db = load_threatfox()
 
 
 
+
+
+# ----------------------------
+# SMART BRAND MATCHING (NEW)
+# ----------------------------
+def is_brand_match(domain, brand):
+    """
+    Smart brand matching to avoid false positives like 'x' in 'xyz'
+    """
+
+    domain = domain.lower()
+    brand = brand.lower()
+
+    # Split domain into tokens
+    parts = re.split(r'[-.]', domain)
+
+    # Rule 1: Short brands (<=3 chars) → exact match only
+    if len(brand) <= 3:
+        return brand in parts
+
+    # Rule 2: Normal brands → allow substring OR typo
+    for part in parts:
+        if brand in part:
+            return True
+
+        # Typosquatting check
+        if 0 < levenshtein_distance(part, brand) <= 2:
+            return True
+
+    return False
+
+
+
 # ----------------------------
 # MAIN DETECTION FUNCTION
 # ----------------------------
@@ -1367,7 +1400,7 @@ def analyze_message(message):
 # ----------------------------
 
         for brand in target_brands:
-            if brand in domain_name:
+            if is_brand_match(domain_name, brand):
 
         # Exact match → skip
                 if domain_name == brand + ".com":
@@ -1379,7 +1412,7 @@ def analyze_message(message):
 
         # Otherwise suspicious
                 structure_score += 30
-                add_reason(f"Brand misuse detected: {brand}")
+                # add_reason(f"Brand misuse detected: {brand}")
 
         
 
@@ -1393,9 +1426,9 @@ def analyze_message(message):
         for brand in target_brands:
 
     # Detect brand in URL but NOT actual domain
-            if brand in full_url and brand not in domain.lower():
+            if is_brand_match(full_url, brand) and not is_brand_match(domain, brand):
                 
-                add_reason(f"Brand impersonation detected: {brand}")
+                # add_reason(f"Brand impersonation detected: {brand}")
                 break
 
 
@@ -1518,21 +1551,29 @@ def analyze_message(message):
 
 
 
-        # ---- Final decision ----
+        # ----------------------------
+# FINAL BRAND MESSAGE (CLEAN)
+# ----------------------------
+
+        detected_brand = None
+
+# Try to find which brand matched
+        for brand in target_brands:
+            if is_brand_match(domain, brand):
+                detected_brand = brand
+                break
 
         if brand_signals >= 3:
             brand_score += 45
-            add_reason("Strong brand impersonation attack")
-            
+            add_reason(f"Strong brand impersonation detected ({detected_brand})")
 
         elif brand_signals == 2:
             brand_score += 30
-            add_reason("Likely brand impersonation")
-            
+            add_reason(f"Likely brand impersonation ({detected_brand})")
 
         elif brand_signals == 1:
             brand_score += 20
-            add_reason("Possible brand-related risk")
+            add_reason(f"Possible brand-related risk ({detected_brand})")
             
 
 
@@ -1938,18 +1979,34 @@ def analyze_message(message):
 
 
     # ----------------------------
-# FINAL RISK CLASSIFICATION
+# FINAL RISK CLASSIFICATION (CONTEXT-AWARE)
 # ----------------------------
-    if score >= 80:
-        add_reason("FINAL VERDICT: HIGH RISK (Likely Phishing)")
 
-    elif score >= 50:
-        add_reason("FINAL VERDICT: MEDIUM RISK (Suspicious)")
+# Decide mode
+    mode = "url_present" if has_url else "text_only"
 
+# Text-only → stricter (keywords dominate)
+    if mode == "text_only":
+        if score >= 50:
+            verdict = "HIGH RISK"
+        elif score >= 20:
+            verdict = "SUSPICIOUS"
+        else:
+            verdict = "SAFE"
+
+# URL present → balanced (URL dominates)
     else:
-        add_reason("FINAL VERDICT: LOW RISK (Likely Safe)")
+        if score >= 60:
+            verdict = "HIGH RISK"
+        elif score >= 30:
+            verdict = "SUSPICIOUS"
+        else:
+            verdict = "SAFE"
 
-    return score, reasons
+# Add one clean final message
+    add_reason(f"FINAL VERDICT: {verdict}")
+
+    return score, reasons, verdict
 
 
 print("Total URLhaus entries:", len(urlhaus_db))
